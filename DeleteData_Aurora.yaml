@@ -4,7 +4,8 @@ Description: "不要RDSスナップショット検知"
 Parameters:
   SaveDays:
     Description: Enter the number of days to keep duplicate snapshots
-    Type: String
+    Type: Number
+    Default: 180
   EndPointEmail:
     Description: Enter the email address to be notified
     Type: String
