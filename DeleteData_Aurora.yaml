@@ -1,0 +1,115 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "不要RDSスナップショット検知"
+
+Parameters:
+  SaveDays:
+    Description: Enter the number of days to keep duplicate snapshots
+    Type: String
+  EndPointEmail:
+    Description: Enter the email address to be notified
+    Type: String
+
+Resources:
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: AuroraSnapshotChecker
+      Handler: DeleteData_Aurora.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.11
+      Timeout: 3
+      Code:
+        S3Bucket: !Sub delete-data-checker-${AWS::AccountId}
+        S3Key: DeleteData_Aurora.zip
+      Environment:
+        Variables:
+          SaveDays: !Ref SaveDays
+          SNSTopicArn: !Ref SNSTopic
+
+  SNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: SNSTopic-AuroraSnapshotChecker
+
+  EmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: email
+      TopicArn: !Ref SNSTopic
+      Endpoint: !Ref EndPointEmail
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: LambdaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - rds:DescribeDBClusterSnapshots
+                  - sns:Publish
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:FilterLogEvents
+                Resource: '*'
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/AuroraSnapshotChecker
+      RetentionInDays: 1
+
+  ErrorLogFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref LambdaLogGroup
+      FilterPattern: "ERROR"
+      MetricTransformations:
+        - MetricName: /aws/lambda/AuroraSnapshotChecker-error
+          MetricNamespace: AuroraSnapshotChecker
+          MetricValue: 1
+          DefaultValue: 0
+
+  ErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: MyErrorAlarm
+      AlarmDescription: "Lambda Error Alarm"
+      Namespace: AuroraSnapshotChecker
+      MetricName: /aws/lambda/AuroraSnapshotChecker-error
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref SNSTopic
+
+  EventBridgeRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: AuroraSnapshotCheckerTrigger
+      Description: "Lambdaを毎日5:00に実行"
+      ScheduleExpression: cron(0 20 * * ? *) #UTC指定のため20時実行に設定
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt LambdaFunction.Arn
+          Id: AuroraSnapshotCheckerTarget
+
+  PermissionForEventsToInvokeLambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref LambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt EventBridgeRule.Arn
