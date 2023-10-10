@@ -34,13 +34,13 @@ def lambda_handler(event, context):
     # 指定日数前の日付を計算
     save_days_ago= current_date - timedelta(days=save_days)
 
-    # Create Timeが半年より前のデータをフィルタリング
+    # 作成日が保存指定日数より前のデータをフィルタリング
     filtered_data = [item for item in duplicates if item["SnapshotCreateTime"] < save_days_ago]
 
     #SNSトピックを指定
     topic_arn = os.environ['SNSTopicArn']
 
-    # 重複があり、かつCreate Timeが半年より前のデータがあるかどうかを判定
+    # 重複があり、かつ作成日が保存指定日数より前のデータがあるかどうかを判定
     if duplicates and filtered_data:
         message = (f"重複したクラスター識別子があり、かつ作成日が{save_days}日より前のデータが存在します\n\nスナップショット識別子")
         filtered_Snapshots = ""
