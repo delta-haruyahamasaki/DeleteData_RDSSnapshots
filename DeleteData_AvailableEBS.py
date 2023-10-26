@@ -32,28 +32,3 @@ def lambda_handler(event, context):
         'statusCode': 200,
         'body': 'メッセージが発行されました。'
     }
-
-
-
-
-
-    snapshots = response['Snapshots']
-
-    # 現在の日付を取得
-    current_date = datetime.now(timezone.utc)
-
-    #指定された日数を取得
-    Reference_date = int(os.environ['REFERENCE_DATE'])
-
-    # 指定された日数から日付を計算
-    Reference_date_ago= current_date - timedelta(days=Reference_date)
-
-    # Create Timeが指定された日数より前のデータをフィルタリング
-    filtered_data = [item for item in snapshots if item["StartTime"] < Reference_date_ago]
-
-    print(filtered_data)
-
-    #SNSトピックを指定
-    topic_arn = os.environ['SNS_TOPIC']
-
-    
