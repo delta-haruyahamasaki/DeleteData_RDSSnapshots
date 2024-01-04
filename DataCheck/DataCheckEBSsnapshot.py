@@ -6,9 +6,9 @@ sns = boto3.client('sns')
 ec2 = boto3.client('ec2')
 
 # 通知先SNSトピックのARNを取得
-topic_arn = os.environ['SNS_TOPIC']
+TOPIC_ARN = os.environ['SNS_TOPIC']
 #データ保存日数を取得
-data_lifespan = int(os.environ['REFERENCE_DATE'])
+DATA_LIFESPAN = int(os.environ['REFERENCE_DATE'])
 
 def lambda_handler(event, context):
     snapshots = get_ebs_snapshots()
@@ -17,7 +17,7 @@ def lambda_handler(event, context):
     filtered_data = filter_old_data(snapshots, expiration_date)
 
     if filtered_data:
-        notify_snapshot_list_by_email(filtered_data, expiration_date)
+        publish_sns_message(filtered_data, expiration_date)
     else:
         print(f"作成日が{expiration_date}日より前のデータは存在しません")
 
@@ -38,14 +38,14 @@ def filter_old_data(snapshots, expiration_date):
             filtered_data.append(snapshot)
     return filtered_data
 
-def notify_snapshot_list_by_email(filtered_data, expiration_date):
+def publish_sns_message(filtered_data, expiration_date):
     message = (f"作成日が{expiration_date}日より前のデータが存在します\n\nEBSスナップショットID")
     Snapshot_id = ""
     for snapshot in filtered_data:
         Snapshot_id += snapshot['SnapshotId'] + "\n"
     content = message + "\n" + Snapshot_id
     sns.publish(
-        TopicArn=topic_arn,
+        TopicArn=TOPIC_ARN,
         Message=content
     )
 

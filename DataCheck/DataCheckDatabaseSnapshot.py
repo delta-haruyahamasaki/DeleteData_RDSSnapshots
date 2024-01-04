@@ -6,17 +6,17 @@ sns = boto3.client('sns')
 rds = boto3.client('rds')
 
 # 通知先SNSトピックのARNを取得
-topic_arn = os.environ['SNS_TOPIC']
+TOPIC_ARN = os.environ['SNS_TOPIC']
 #データ保存日数を取得
-data_lifespan = int(os.environ['REFERENCE_DATE'])
+DATA_LIFESPAN = int(os.environ['REFERENCE_DATE'])
 
 def lambda_handler(event, context):
-    expiration_date = get_expiration_date(data_lifespan)
+    expiration_date = get_expiration_date(DATA_LIFESPAN)
     duplicate_snapshots = collect_duplicate_snapshots()
     filtered_data = filter_old_data(duplicate_snapshots, expiration_date)
 
     if duplicate_snapshots and filtered_data:
-        notify_snapshot_list_by_email(filtered_data, expiration_date)
+        publish_sns_message(filtered_data, expiration_date)
     else:
         print(f"{expiration_date}日より前に作成されたデータで、同じDBインスタンスまたはクラスター識別子を持つ重複したスナップショットはありません。")
 
@@ -46,21 +46,21 @@ def get_manual_snapshots_list(type):
         return instance_snapshots
 
 def merge_snapshots(cluster_snapshots, instance_snapshots):
-    for item in cluster_snapshots:
-        item["DBIdentifier"] = item.pop("DBClusterIdentifier")
-        item["DBSnapshotIdentifier"] = item.pop("DBClusterSnapshotIdentifier")
+    for cluster_snapshot in cluster_snapshots:
+        cluster_snapshot["DBIdentifier"] = cluster_snapshot.pop("DBClusterIdentifier")
+        cluster_snapshot["DBSnapshotIdentifier"] = cluster_snapshot.pop("DBClusterSnapshotIdentifier")
 
-    for item in instance_snapshots:
-        item["DBIdentifier"] = item.pop("DBInstanceIdentifier")
-        item["DBSnapshotIdentifier"] = item.pop("DBSnapshotIdentifier")
+    for instance_snapshot in instance_snapshots:
+        instance_snapshot["DBIdentifier"] = instance_snapshot.pop("DBInstanceIdentifier")
+        instance_snapshot["DBSnapshotIdentifier"] = instance_snapshot.pop("DBSnapshotIdentifier")
 
     snapshots = cluster_snapshots + instance_snapshots
     sorted_snapshots = sorted(snapshots, key=lambda x: x["SnapshotCreateTime"], reverse=True)
     return sorted_snapshots
 
-def get_expiration_date(data_lifespan):
+def get_expiration_date(DATA_LIFESPAN):
     current_date = datetime.now(timezone.utc)
-    expiration_date= current_date - timedelta(days=data_lifespan)
+    expiration_date= current_date - timedelta(days=DATA_LIFESPAN)
     return expiration_date
 
 def filter_old_data(duplicate_snapshots, expiration_date):
@@ -70,13 +70,13 @@ def filter_old_data(duplicate_snapshots, expiration_date):
             filtered_data.append(snapshot)
     return filtered_data
 
-def notify_snapshot_list_by_email(filtered_data, expiration_date):
+def publish_sns_message(filtered_data, expiration_date):
     message = (f"DBインスタンスまたはクラスター識別子が重複したスナップショットあり、かつCreate Timeが{expiration_date}日より前のデータが存在します\n\nスナップショット識別子")
     snapshot_identifier = ""
     for snapshot in filtered_data:
         snapshot_identifier += snapshot['DBSnapshotIdentifier'] + "\n"
     content = message + "\n" + snapshot_identifier
     sns.publish(
-        TopicArn=topic_arn,
+        TopicArn=TOPIC_ARN,
         Message=content
     )
